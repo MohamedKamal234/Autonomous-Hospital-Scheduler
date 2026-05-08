@@ -1,30 +1,90 @@
+"""
+Hospital AI Triage & Disease Classifier
+=======================================
+- Automated patient priority assignment
+- 377 Symptom analysis
+- Direct integration for FlexSim simulation data
+"""
+
 import streamlit as st
 import joblib
 import numpy as np
 import pandas as pd
 import sqlite3
 from datetime import datetime
+import plotly.graph_objects as go
 
-# 1. إعدادات الصفحة
-st.set_page_config(page_title="Hospital AI Triage System", page_icon="🏥", layout="wide")
+# ─────────────────────────────────────────────────────────────────────────────
+# Page Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="AI Hospital Scheduler",
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-# تصميم بسيط للواجهة
+# ─────────────────────────────────────────────────────────────────────────────
+# Custom CSS - Professional Clinical Dark Theme
+# ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
-    <style>
-    .stButton>button { width: 100%; background-color: #00d4aa; color: black; font-weight: bold; border-radius: 10px; }
-    .priority-box { padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px; border: 2px solid #30363d; }
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+    :root {
+        --accent: #00d4aa;
+        --bg-card: #111827;
+    }
+    .main { background-color: #080c14; }
+    .stButton>button {
+        width: 100%;
+        background-color: var(--accent);
+        color: black;
+        font-weight: bold;
+        border-radius: 8px;
+    }
+    .metric-card {
+        background-color: var(--bg-card);
+        padding: 20px;
+        border-radius: 12px;
+        border-left: 5px solid var(--accent);
+        text-align: center;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# 2. تحميل الموديل والبيانات التعريفية
+# ─────────────────────────────────────────────────────────────────────────────
+# Database Setup (For FlexSim Connection)
+# ─────────────────────────────────────────────────────────────────────────────
+def init_db():
+    conn = sqlite3.connect('hospital_data.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS triage_results
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  patient_name TEXT,
+                  age INTEGER,
+                  predicted_disease TEXT,
+                  priority_level INTEGER,
+                  arrival_time TEXT)''')
+    conn.commit()
+    conn.close()
+
+def save_prediction(name, age, disease, priority):
+    conn = sqlite3.connect('hospital_data.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO triage_results (patient_name, age, predicted_disease, priority_level, arrival_time) VALUES (?, ?, ?, ?, ?)",
+              (name, age, disease, priority, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Assets Loading
+# ─────────────────────────────────────────────────────────────────────────────
 @st.cache_resource
-def load_hospital_assets():
-    # تحميل الموديل والـ Encoder (تأكد أن الملفات في نفس المجلد)
+def load_assets():
     model = joblib.load('disease_classifier_model.pkl')
     le = joblib.load('label_encoder.pkl')
     
-    # قائمة الـ 377 عرض بالترتيب الصحيح (منسقة من النوت بوك الخاص بك)
-    feature_names = [
+    # 377 Validated Features
+    features = [
         'anxiety and nervousness', 'depression', 'shortness of breath', 'depressive or psychotic symptoms', 
         'sharp chest pain', 'dizziness', 'insomnia', 'abnormal involuntary movements', 'chest tightness', 
         'palpitations', 'irregular heartbeat', 'breathing fast', 'hoarse voice', 'sore throat', 
@@ -102,7 +162,7 @@ def load_hospital_assets():
         'penile discharge', 'shoulder lump or mass', 'polyuria', 'cloudy eye', 'hysterical behavior', 
         'arm lump or mass', 'nightmares', 'bleeding gums', 'pain in gums', 'bedwetting', 'diaper rash', 
         'lump or mass of breast', 'vaginal bleeding after menopause', 'infrequent menstruation', 
-        'mass on vulvulva', 'jaw pain', 'itching of scrotum', 'postpartum problems of the breast', 
+        'mass on vulva', 'jaw pain', 'itching of scrotum', 'postpartum problems of the breast', 
         'eyelid retracted', 'hesitancy', 'elbow lump or mass', 'muscle weakness', 'throat redness', 
         'joint swelling', 'tongue pain', 'redness in or around nose', 'wrinkles on skin', 'foot or toe weakness', 
         'hand or finger cramps or spasms', 'back stiffness or tightness', 'wrist lump or mass', 'skin pain', 
@@ -110,86 +170,87 @@ def load_hospital_assets():
         'stuttering or stammering', 'problems with orgasm', 'nose deformity', 'lump over jaw', 'sore in nose', 
         'hip weakness', 'back swelling', 'ankle stiffness or tightness', 'ankle weakness', 'neck weakness'
     ]
-    return model, le, feature_names
-# تحميل الأصول (Assets)
-try:
-    model, le, feature_names = load_hospital_assets()
-except Exception as e:
-    st.error(f"Error loading model files: {e}")
-    st.stop()
+    return model, le, features
 
-# 3. دالة تحديد الأولوية (لـ FlexSim)
-def get_priority(disease_name):
-    # تحويل لـ lowercase لضمان التطابق
-    d = disease_name.lower()
+# ─────────────────────────────────────────────────────────────────────────────
+# Main Application Logic
+# ─────────────────────────────────────────────────────────────────────────────
+init_db()
+model, le, feature_names = load_assets()
+
+st.title("🏥 AI Hospital Admission & Triage System")
+st.markdown("---")
+
+# Sidebar for Navigation
+menu = st.sidebar.selectbox("Navigate", ["Patient Admission", "Triage Analytics"])
+
+if menu == "Patient Admission":
+    col1, col2 = st.columns([1, 1])
     
-    # حالات الطوارئ (الأولوية 1)
-    emergency = ['heart attack', 'stroke', 'sepsis', 'cardiac', 'respiratory failure', 'unconscious']
-    # حالات عاجلة (الأولوية 2)
-    urgent = ['pneumonia', 'appendicitis', 'fracture', 'kidney failure', 'bleeding']
-    
-    if any(e in d for e in emergency): return 1
-    if any(u in d for u in urgent): return 2
-    return 3 # حالة عادية
-
-# 4. واجهة التطبيق
-st.title("🏥 نظام الفرز الطبي الذكي")
-st.write("قم بإدخال بيانات المريض والأعراض لتحديد الأولوية وإرسال البيانات لـ FlexSim.")
-
-col1, col2 = st.columns([1, 2])
-
-with col1:
-    st.header("بيانات المريض")
-    name = st.text_input("اسم المريض")
-    age = st.number_input("العمر", 0, 120, 25)
-    arrival_time = st.time_input("وقت الوصول")
-
-with col2:
-    st.header("اختيار الأعراض")
-    selected_symptoms = st.multiselect("اختر الأعراض (يمكنك البحث بكتابة اسم العرض):", feature_names)
-
-if st.button("تحليل الحالة"):
-    if not name or not selected_symptoms:
-        st.error("يرجى إدخال الاسم واختيار الأعراض.")
-    else:
-        # بناء الـ Vector (377 عمود)
-        input_data = np.zeros((1, len(feature_names)))
-        for s in selected_symptoms:
-            idx = feature_names.index(s)
-            input_data[0, idx] = 1
+    with col1:
+        st.subheader("📋 Patient Registration")
+        p_name = st.text_input("Full Name")
+        p_age = st.number_input("Age", min_value=0, max_value=120, value=25)
         
-        # التوقع
-        prediction = model.predict(input_data)[0]
-        disease = le.inverse_transform([prediction])[0]
-        priority_val = get_priority(disease)
-        
-        # عرض النتيجة
-        st.success(f"التشخيص المتوقع: {disease}")
-        
-        color = "#ff4b4b" if priority_val == 1 else "#ffa500" if priority_val == 2 else "#00d4aa"
-        st.markdown(f"""
-            <div class="priority-box" style="background-color: {color};">
-                <h2 style="color: black;">مستوى الأولوية لـ FlexSim: {priority_val}</h2>
-            </div>
-            """, unsafe_allow_html=True)
+    with col2:
+        st.subheader("🩺 Symptom Selection")
+        selected_symptoms = st.multiselect(
+            "Select symptoms presented by the patient:",
+            options=feature_names
+        )
+
+    if st.button("Analyze & Assign Priority"):
+        if p_name and selected_symptoms:
+            # Prepare Input Vector
+            input_vector = np.zeros(len(feature_names))
+            for s in selected_symptoms:
+                idx = feature_names.index(s)
+                input_vector[idx] = 1
             
-        # حفظ في قاعدة البيانات (لربطها بـ FlexSim)
-        conn = sqlite3.connect('hospital_data.db')
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS triage 
-                     (patient_name TEXT, age INTEGER, disease TEXT, priority INTEGER, time TEXT)''')
-        c.execute("INSERT INTO triage VALUES (?, ?, ?, ?, ?)", 
-                  (name, age, disease, priority_val, str(arrival_time)))
-        conn.commit()
-        conn.close()
-        st.info("تم حفظ البيانات في hospital_data.db بنجاح.")
+            # AI Prediction
+            prediction_idx = model.predict(input_vector.reshape(1, -1))[0]
+            disease = le.inverse_transform([prediction_idx])[0]
+            
+            # Priority Logic (Simplified example)
+            critical_symptoms = ['sharp chest pain', 'shortness of breath', 'seizures', 'fainting']
+            if any(s in selected_symptoms for s in critical_symptoms):
+                priority = 1 # Immediate
+                label = "Level 1: Critical (Immediate Action)"
+                color = "red"
+            elif len(selected_symptoms) > 5:
+                priority = 2 # Urgent
+                label = "Level 2: Urgent"
+                color = "orange"
+            else:
+                priority = 3 # Non-Urgent
+                label = "Level 3: Standard"
+                color = "green"
+            
+            # Save to Database for FlexSim
+            save_prediction(p_name, p_age, disease, priority)
+            
+            # Results Display
+            st.success(f"Analysis Complete for {p_name}")
+            res1, res2 = st.columns(2)
+            res1.metric("Predicted Condition", disease)
+            res2.metric("Assigned Priority", f"P{priority}")
+            st.info(f"Guidance: {label}")
+        else:
+            st.warning("Please enter patient name and select at least one symptom.")
 
-# عرض الطابور الحالي
-if st.checkbox("عرض قائمة الانتظار الحالية"):
-    try:
-        conn = sqlite3.connect('hospital_data.db')
-        df_display = pd.read_sql_query("SELECT * FROM triage ORDER BY priority ASC", conn)
-        st.dataframe(df_display)
-        conn.close()
-    except:
-        st.write("القائمة فارغة حالياً.")
+elif menu == "Triage Analytics":
+    st.subheader("📊 Live Triage Dashboard")
+    conn = sqlite3.connect('hospital_data.db')
+    df = pd.read_sql_query("SELECT * FROM triage_results ORDER BY id DESC", conn)
+    conn.close()
+    
+    if not df.empty:
+        st.dataframe(df.style.highlight_max(axis=0, subset=['priority_level'], color='#3d1d1d'))
+        
+        # Priority Chart
+        p_counts = df['priority_level'].value_counts()
+        fig = go.Figure(data=[go.Pie(labels=p_counts.index, values=p_counts.values, hole=.3)])
+        fig.update_layout(title_text="Patient Priority Distribution", template="plotly_dark")
+        st.plotly_chart(fig)
+    else:
+        st.write("No patient data recorded yet.")
