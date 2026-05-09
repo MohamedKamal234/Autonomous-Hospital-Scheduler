@@ -10,13 +10,11 @@ import streamlit as st
 import joblib
 import numpy as np
 import pandas as pd
-import sqlite3
 from datetime import datetime
 import plotly.graph_objects as go
+from supabase import create_client, Client
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Page Configuration
-# ─────────────────────────────────────────────────────────────────────────────
+# --- 1. إعدادات الصفحة (Page Configuration) ---
 st.set_page_config(
     page_title="AI Hospital Scheduler",
     page_icon="🏥",
@@ -24,60 +22,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Custom CSS - Professional Clinical Dark Theme
-# ─────────────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-    :root {
-        --accent: #00d4aa;
-        --bg-card: #111827;
-    }
-    .main { background-color: #080c14; }
-    .stButton>button {
-        width: 100%;
-        background-color: var(--accent);
-        color: black;
-        font-weight: bold;
-        border-radius: 8px;
-    }
-    .metric-card {
-        background-color: var(--bg-card);
-        padding: 20px;
-        border-radius: 12px;
-        border-left: 5px solid var(--accent);
-        text-align: center;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Database Setup (For FlexSim Connection)
-# ─────────────────────────────────────────────────────────────────────────────
-def init_db():
-    conn = sqlite3.connect('hospital_data.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS triage_results
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  patient_name TEXT,
-                  age INTEGER,
-                  predicted_disease TEXT,
-                  priority_level INTEGER,
-                  arrival_time TEXT)''')
-    conn.commit()
-    conn.close()
-
-def save_prediction(name, age, disease, priority):
-    conn = sqlite3.connect('hospital_data.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO triage_results (patient_name, age, predicted_disease, priority_level, arrival_time) VALUES (?, ?, ?, ?, ?)",
-              (name, age, disease, priority, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    conn.commit()
-    conn.close()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Assets Loading
-# ─────────────────────────────────────────────────────────────────────────────
+# --- 2. إعدادات السحاب (Supabase Connection) ---
+SUPABASE_URL = "https://kxoaasybtxsznrlisxrud.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4b2FzeWJ0eHN6bnJsaXN4cnVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNTI5NjksImV4cCI6MjA5MzkyODk2OX0._f1FFz9vdoGecazw1Ta6wVPxAlskhZkB7K9IX0FPb0k"
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 @st.cache_resource
 def load_assets():
     model = joblib.load('disease_classifier_model.pkl')
@@ -170,28 +118,42 @@ def load_assets():
         'stuttering or stammering', 'problems with orgasm', 'nose deformity', 'lump over jaw', 'sore in nose', 
         'hip weakness', 'back swelling', 'ankle stiffness or tightness', 'ankle weakness', 'neck weakness'
     ]
-    return model, le, features
+    return model, le, feature_names
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Application Logic
 # ─────────────────────────────────────────────────────────────────────────────
-init_db()
 model, le, feature_names = load_assets()
 
+# --- 4. دوال التعامل مع السحاب (Cloud Functions) ---
+def save_prediction(name, age, disease, priority):
+    try:
+        data = {
+            "patient_name": name,
+            "age": int(age),
+            "predicted_disease": disease,
+            "priority_level": int(priority)
+        }
+        supabase.table("triage_results").insert(data).execute()
+        return True
+    except Exception as e:
+        st.error(f"Cloud Error: {e}")
+        return False
+
+# --- 5. واجهة المستخدم الرئيسية (Main Application Logic) ---
 st.title("🏥 AI Hospital Admission & Triage System")
 st.markdown("---")
 
-# Sidebar for Navigation
 menu = st.sidebar.selectbox("Navigate", ["Patient Admission", "Triage Analytics"])
 
 if menu == "Patient Admission":
     col1, col2 = st.columns([1, 1])
-    
+
     with col1:
-        st.subheader("📋 Patient Registration")
+        st.subheader("📝 Patient Registration")
         p_name = st.text_input("Full Name")
         p_age = st.number_input("Age", min_value=0, max_value=120, value=25)
-        
+
     with col2:
         st.subheader("🩺 Symptom Selection")
         selected_symptoms = st.multiselect(
@@ -201,56 +163,60 @@ if menu == "Patient Admission":
 
     if st.button("Analyze & Assign Priority"):
         if p_name and selected_symptoms:
-            # Prepare Input Vector
+            # تجهيز مصفوفة الأعراض للموديل
             input_vector = np.zeros(len(feature_names))
             for s in selected_symptoms:
-                idx = feature_names.index(s)
-                input_vector[idx] = 1
+                if s in feature_names:
+                    idx = feature_names.index(s)
+                    input_vector[idx] = 1
             
-            # AI Prediction
+            # توقع المرض
             prediction_idx = model.predict(input_vector.reshape(1, -1))[0]
             disease = le.inverse_transform([prediction_idx])[0]
-            
-            # Priority Logic (Simplified example)
+
+            # منطق الأولوية (Priority Logic)
             critical_symptoms = ['sharp chest pain', 'shortness of breath', 'seizures', 'fainting']
             if any(s in selected_symptoms for s in critical_symptoms):
-                priority = 1 # Immediate
+                priority = 1
                 label = "Level 1: Critical (Immediate Action)"
                 color = "red"
             elif len(selected_symptoms) > 5:
-                priority = 2 # Urgent
+                priority = 2
                 label = "Level 2: Urgent"
                 color = "orange"
             else:
-                priority = 3 # Non-Urgent
+                priority = 3
                 label = "Level 3: Standard"
                 color = "green"
-            
-            # Save to Database for FlexSim
-            save_prediction(p_name, p_age, disease, priority)
-            
-            # Results Display
-            st.success(f"Analysis Complete for {p_name}")
-            res1, res2 = st.columns(2)
-            res1.metric("Predicted Condition", disease)
-            res2.metric("Assigned Priority", f"P{priority}")
-            st.info(f"Guidance: {label}")
+
+            # حفظ في السحاب
+            if save_prediction(p_name, p_age, disease, priority):
+                st.success(f"Analysis Complete for {p_name}")
+                
+                res1, res2 = st.columns(2)
+                res1.metric("Predicted Condition", disease)
+                res2.metric("Assigned Priority", f"P{priority}")
+                st.info(f"Guidance: {label}")
         else:
             st.warning("Please enter patient name and select at least one symptom.")
 
 elif menu == "Triage Analytics":
     st.subheader("📊 Live Triage Dashboard")
-    conn = sqlite3.connect('hospital_data.db')
-    df = pd.read_sql_query("SELECT * FROM triage_results ORDER BY id DESC", conn)
-    conn.close()
     
-    if not df.empty:
-        st.dataframe(df.style.highlight_max(axis=0, subset=['priority_level'], color='#3d1d1d'))
+    try:
+        # سحب البيانات من السحاب
+        response = supabase.table("triage_results").select("*").order("id", desc=True).execute()
+        df = pd.DataFrame(response.data)
         
-        # Priority Chart
-        p_counts = df['priority_level'].value_counts()
-        fig = go.Figure(data=[go.Pie(labels=p_counts.index, values=p_counts.values, hole=.3)])
-        fig.update_layout(title_text="Patient Priority Distribution", template="plotly_dark")
-        st.plotly_chart(fig)
-    else:
-        st.write("No patient data recorded yet.")
+        if not df.empty:
+            st.dataframe(df.style.highlight_max(axis=0, subset=['priority_level'], color='#3d1d1d'))
+
+            # رسم بياني للأولويات
+            p_counts = df['priority_level'].value_counts()
+            fig = go.Figure(data=[go.Pie(labels=p_counts.index, values=p_counts.values, hole=.3)])
+            fig.update_layout(title_text="Patient Priority Distribution", template="plotly_dark")
+            st.plotly_chart(fig)
+        else:
+            st.write("No patient data recorded yet.")
+    except Exception as e:
+        st.error(f"Error fetching data from cloud: {e}")
