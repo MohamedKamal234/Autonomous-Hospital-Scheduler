@@ -23,7 +23,7 @@ st.set_page_config(
 )
 
 # --- 2. إعدادات السحاب (Supabase Connection) ---
-SUPABASE_URL = "https://kxoaasybtxsznrlisxrud.supabase.co"
+SUPABASE_URL = SUPABASE_URL = "https://kxoasybtxsznrlisxrud.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4b2FzeWJ0eHN6bnJsaXN4cnVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNTI5NjksImV4cCI6MjA5MzkyODk2OX0._f1FFz9vdoGecazw1Ta6wVPxAlskhZkB7K9IX0FPb0k"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 @st.cache_resource
