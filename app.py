@@ -32,7 +32,7 @@ def load_assets():
     le = joblib.load('label_encoder.pkl')
     
     # 377 Validated Features
-    features = [
+    feature_names =   [
         'anxiety and nervousness', 'depression', 'shortness of breath', 'depressive or psychotic symptoms', 
         'sharp chest pain', 'dizziness', 'insomnia', 'abnormal involuntary movements', 'chest tightness', 
         'palpitations', 'irregular heartbeat', 'breathing fast', 'hoarse voice', 'sore throat', 
