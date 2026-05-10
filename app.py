@@ -7,6 +7,7 @@ Hospital AI Triage & Disease Classifier
 """
 import streamlit as st
 import pandas as pd
+import joblib
 from supabase import create_client, Client
 
 # --- 1. إعدادات الصفحة (Page Configuration) ---
@@ -18,17 +19,41 @@ st.set_page_config(
 )
 
 # --- 2. إعدادات الربط مع السحابة (Supabase Connection) ---
-# ملاحظة: تأكد أن الرابط والمفتاح صحيحين كما في حسابك
+# ملاحظة: تأكد أن هذه القيم مطابقة تماماً لما في حسابك
 SUPABASE_URL = "https://kxoasyhtxsznelisxrud.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4b2FzeWJ0eHN6bnJsaXN4cnVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNTI5NjksImV4cCI6MjA5MzkyODk2OX0._f1FFz9vdoGecazw1Ta6wVPxAlskhZkB7K9IX0FPb0k"
-
-# إنشاء كائن الاتصال
+# إنشاء كائن الاتصال (Client)
 try:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     st.error(f"Failed to connect to Supabase: {e}")
 
-# --- 3. دالة جلب البيانات وعرضها ---
+# --- 3. تحميل موديلات الذكاء الاصطناعي (AI Assets) ---
+@st.cache_resource
+def load_assets():
+    try:
+        # تحميل الموديل والـ Encoder
+        # هام: يجب رفع هذه الملفات بجانب app.py على GitHub
+        model = joblib.load('disease_classifier_model.pkl')
+        le = joblib.load('label_encoder.pkl')
+        
+        # قائمة الخصائص (Features) - الـ 377 عرضاً كما في كودك
+        feature_names = [
+            'anxiety and nervousness', 'depression', 'shortness of breath',
+            # ... (بقية الـ 377 عرضاً هنا)
+        ]
+        return model, le, feature_names
+    except FileNotFoundError:
+        st.error("Error: Model files (.pkl) not found. Please upload them to GitHub.")
+        return None, None, None
+    except Exception as e:
+        st.error(f"Error loading assets: {e}")
+        return None, None, None
+
+# استدعاء التحميل
+model, le, feature_names = load_assets()
+
+# --- 4. دالة جلب البيانات وعرضها ---
 def display_data():
     try:
         # سحب البيانات من جدول triage_results
@@ -36,13 +61,10 @@ def display_data():
             "patient_name, age, predicted_disease, priority_level"
         ).execute()
         
-        # تحويل البيانات القادمة إلى DataFrame
         df = pd.DataFrame(response.data)
         
         if not df.empty:
             st.subheader("📋 Patient Triage Records")
-            
-            # تنسيق عرض الجدول ليملأ عرض الصفحة
             st.dataframe(
                 df, 
                 use_container_width=True,
@@ -57,37 +79,8 @@ def display_data():
             # إحصائيات سريعة أسفل الجدول
             col1, col2 = st.columns(2)
             col1.metric("Total Patients", len(df))
-            col2.metric("High Priority Cases", len(df[df['priority_level'] == 'High']))
-            
-        else:
-            st.info("No data found in the database.")
-            
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
-
-# --- 4. واجهة التطبيق الرئيسية ---
-def main():
-    st.title("Hospital AI Triage System")
-    st.markdown("---")
-    
-    # أزرار التحكم
-    col_btn1, col_btn2 = st.columns([1, 5])
-    with col_btn1:
-        if st.button("🔄 Refresh Data"):
-            st.rerun()
-            
-    # استدعاء دالة العرض
-    display_data()
-
-if __name__ == "__main__":
-    main()
-# --- 2. إعدادات السحاب (Supabase Connection) ---
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-@st.cache_resource
-def load_assets():
-    model = joblib.load('disease_classifier_model.pkl')
-    le = joblib.load('label_encoder.pkl')
+            high_count = len(df[df['priority_level'].str.lower() == 'high']) if 'priority_level' in df.columns else 0
+            col2.metric("High Priority Cases", high_count)
     
     # 377 Validated Features
     feature_names =   [
