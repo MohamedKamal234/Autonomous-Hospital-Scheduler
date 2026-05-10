@@ -29,7 +29,7 @@ def update_local_excel():
         
         # حفظ الملف في فولدر "Downloads" أو مكان سهل الوصول إليه
         # هيتحفظ في نفس المكان اللي فيه الـ app.py
-        path = "triage_data.xlsx" 
+        path = "C:/triage_data.xlsx" 
         df.to_excel(path, engine='openpyxl', index=False)
         print("-----------------------------------------")
         print(f"DONE! FILE IS HERE: {os.getcwd()}")
