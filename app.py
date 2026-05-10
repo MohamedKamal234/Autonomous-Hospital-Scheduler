@@ -1,16 +1,9 @@
-"""
-Hospital AI Triage & Disease Classifier
-=======================================
-- Automated patient priority assignment
-- 377 Symptom analysis
-- Direct integration for FlexSim simulation data
-"""
 import streamlit as st
 import pandas as pd
 import joblib
 from supabase import create_client, Client
 
-# --- 1. إعدادات الصفحة (Page Configuration) ---
+# --- 1. إعدادات الصفحة ---
 st.set_page_config(
     page_title="AI Hospital Scheduler",
     page_icon="🏥",
@@ -18,9 +11,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. إعدادات الربط مع السحابة (Supabase Connection) ---
-SUPABASE_URL = "https://kxoasyhtxsznelisxrud.supabase.co"
+# --- 2. إعدادات الربط مع Supabase ---
+# تم استخدام الرابط والمفتاح المستخرجين من ملفاتك لضمان نجاح الاتصال
+SUPABASE_URL = "https://kxoasybtxsznrlisxrud.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4b2FzeWJ0eHN6bnJsaXN4cnVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNTI5NjksImV4cCI6MjA5MzkyODk2OX0._f1FFz9vdoGecazw1Ta6wVPxAlskhZkB7K9IX0FPb0k"
+
 try:
     if 'supabase' not in st.session_state:
         st.session_state.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -28,15 +23,15 @@ try:
 except Exception as e:
     st.error(f"Failed to connect to Supabase: {e}")
 
-# --- 3. تحميل موديلات الذكاء الاصطناعي (AI Assets) ---
+# --- 3. تحميل موديلات الذكاء الاصطناعي ---
 @st.cache_resource
 def load_assets():
     try:
-        # تحميل الملفات من المجلد الرئيسي (تأكد من وجودها على GitHub)
+        # تحميل الملفات (يجب رفعها على GitHub بجانب app.py)
         model = joblib.load('disease_classifier_model.pkl')
         le = joblib.load('label_encoder.pkl')
         
-        # قائمة الـ 377 عرضاً المستخرجة من صور الكود الخاصة بك
+        # قائمة الـ 377 عرضاً كما تظهر في لقطات الشاشة الخاصة بك
         feature_names = [
             'anxiety and nervousness', 'depression', 'shortness of breath', 'depressive or psychotic symptoms',
             'sharp chest pain', 'dizziness', 'insomnia', 'abnormal involuntary movements', 'chest tightness',
@@ -128,13 +123,14 @@ def load_assets():
         st.error(f"⚠️ Error loading assets: {e}")
         return None, None, None
 
-# --- 4. دالة جلب البيانات من السحاب (Cloud Functions) ---
+# تحميل المتغيرات للاستخدام
+model, le, feature_names = load_assets()
+
+# --- 4. دالة عرض البيانات من قاعدة البيانات ---
 def display_data():
     try:
-        response = supabase.table("triage_results").select(
-            "patient_name, age, predicted_disease, priority_level"
-        ).execute()
-        
+        # جلب البيانات من جدول triage_results
+        response = supabase.table("triage_results").select("*").execute()
         df = pd.DataFrame(response.data)
         
         if not df.empty:
@@ -145,130 +141,28 @@ def display_data():
             col1, col2 = st.columns(2)
             col1.metric("Total Patients", len(df))
             
-            high_count = 0
+            # حساب الحالات الحرجة بناءً على العمود priority_level
             if 'priority_level' in df.columns:
                 high_count = len(df[df['priority_level'].astype(str).str.lower() == 'high'])
-            col2.metric("High Priority Cases", high_count)
+                col2.metric("High Priority Cases", high_count)
         else:
             st.info("ℹ️ No data found in the database.")
+            
     except Exception as e:
         st.error(f"❌ Error fetching data: {e}")
 
-# --- 5. منطق التشغيل الرئيسي ---
+# --- 5. واجهة التطبيق الرئيسية ---
 def main():
     st.title("Hospital AI Triage System")
     st.write("Real-time patient classification and scheduling dashboard.")
     
-    # تحميل الأصول
-    global model, le, feature_names
-    model, le, feature_names = load_assets()
-
     if st.button("🔄 Refresh Data"):
         st.rerun()
     
     st.divider()
+    
+    # عرض البيانات
     display_data()
 
 if __name__ == "__main__":
     main()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Main Application Logic
-# ─────────────────────────────────────────────────────────────────────────────
-model, le, feature_names = load_assets()
-
-# --- 4. دوال التعامل مع السحاب (Cloud Functions) ---
-def save_prediction(name, age, disease, priority):
-    try:
-        data = {
-            "patient_name": name,
-            "age": int(age),
-            "predicted_disease": disease,
-            "priority_level": int(priority)
-        }
-        supabase.table("triage_results").insert(data).execute()
-        return True
-    except Exception as e:
-        st.error(f"Cloud Error: {e}")
-        return False
-
-# --- 5. واجهة المستخدم الرئيسية (Main Application Logic) ---
-st.title("🏥 AI Hospital Admission & Triage System")
-st.markdown("---")
-
-menu = st.sidebar.selectbox("Navigate", ["Patient Admission", "Triage Analytics"])
-
-if menu == "Patient Admission":
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        st.subheader("📝 Patient Registration")
-        p_name = st.text_input("Full Name")
-        p_age = st.number_input("Age", min_value=0, max_value=120, value=25)
-
-    with col2:
-        st.subheader("🩺 Symptom Selection")
-        selected_symptoms = st.multiselect(
-            "Select symptoms presented by the patient:",
-            options=feature_names
-        )
-
-    if st.button("Analyze & Assign Priority"):
-        if p_name and selected_symptoms:
-            # تجهيز مصفوفة الأعراض للموديل
-            input_vector = np.zeros(len(feature_names))
-            for s in selected_symptoms:
-                if s in feature_names:
-                    idx = feature_names.index(s)
-                    input_vector[idx] = 1
-            
-            # توقع المرض
-            prediction_idx = model.predict(input_vector.reshape(1, -1))[0]
-            disease = le.inverse_transform([prediction_idx])[0]
-
-            # منطق الأولوية (Priority Logic)
-            critical_symptoms = ['sharp chest pain', 'shortness of breath', 'seizures', 'fainting']
-            if any(s in selected_symptoms for s in critical_symptoms):
-                priority = 1
-                label = "Level 1: Critical (Immediate Action)"
-                color = "red"
-            elif len(selected_symptoms) > 5:
-                priority = 2
-                label = "Level 2: Urgent"
-                color = "orange"
-            else:
-                priority = 3
-                label = "Level 3: Standard"
-                color = "green"
-
-            # حفظ في السحاب
-            if save_prediction(p_name, p_age, disease, priority):
-                st.success(f"Analysis Complete for {p_name}")
-                
-                res1, res2 = st.columns(2)
-                res1.metric("Predicted Condition", disease)
-                res2.metric("Assigned Priority", f"P{priority}")
-                st.info(f"Guidance: {label}")
-        else:
-            st.warning("Please enter patient name and select at least one symptom.")
-
-elif menu == "Triage Analytics":
-    st.subheader("📊 Live Triage Dashboard")
-    
-    try:
-        # سحب البيانات من السحاب
-        response = supabase.table("triage_results").select("*").order("id", desc=True).execute()
-        df = pd.DataFrame(response.data)
-        
-        if not df.empty:
-            st.dataframe(df.style.highlight_max(axis=0, subset=['priority_level'], color='#3d1d1d'))
-
-            # رسم بياني للأولويات
-            p_counts = df['priority_level'].value_counts()
-            fig = go.Figure(data=[go.Pie(labels=p_counts.index, values=p_counts.values, hole=.3)])
-            fig.update_layout(title_text="Patient Priority Distribution", template="plotly_dark")
-            st.plotly_chart(fig)
-        else:
-            st.write("No patient data recorded yet.")
-    except Exception as e:
-        st.error(f"Error fetching data from cloud: {e}")
