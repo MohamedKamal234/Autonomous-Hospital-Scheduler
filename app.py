@@ -21,6 +21,16 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+def update_local_excel():
+    while True:
+        # سحب البيانات من السحاب
+        response = supabase.table("triage_results").select("*").execute()
+        df = pd.DataFrame(response.data)
+        
+        # حفظ الملف في مكان ثابت للفليكس سيم
+        df.to_excel("C:/triage_data.xlsx", index=False)
+        print("تم تحديث الملف المحلي...")
+        time.sleep(1)
 
 # --- 2. إعدادات السحاب (Supabase Connection) ---
 SUPABASE_URL = SUPABASE_URL = "https://kxoasybtxsznrlisxrud.supabase.co"
