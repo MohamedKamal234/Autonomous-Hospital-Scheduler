@@ -5,3 +5,5 @@ joblib
 scikit-learn
 plotly
 supabase
+openpyxl
+os

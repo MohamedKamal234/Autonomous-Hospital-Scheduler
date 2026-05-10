@@ -13,7 +13,7 @@ import pandas as pd
 from datetime import datetime
 import plotly.graph_objects as go
 from supabase import create_client, Client
-
+import time
 # --- 1. إعدادات الصفحة (Page Configuration) ---
 st.set_page_config(
     page_title="AI Hospital Scheduler",
@@ -29,12 +29,17 @@ def update_local_excel():
         
         # حفظ الملف في فولدر "Downloads" أو مكان سهل الوصول إليه
         path = os.path.join(os.path.expanduser("~"), "Downloads", "triage_data.xlsx")
-        df.to_excel(path, index=False)
+        df.to_excel(path, engine='openpyxl', index=False)
+        print(f"Success! Saved to: {path}")
         print(f"Success! Saved to: {path}")
         return path
     except Exception as e:
         print(f"Error: {e}")
         return None
+# السطر ده هو اللي هيخلي الكود يشتغل فعلياً
+if __name__ == "__main__":
+    update_local_excel()
+update_local_excel()
 # --- 2. إعدادات السحاب (Supabase Connection) ---
 SUPABASE_URL = SUPABASE_URL = "https://kxoasybtxsznrlisxrud.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4b2FzeWJ0eHN6bnJsaXN4cnVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNTI5NjksImV4cCI6MjA5MzkyODk2OX0._f1FFz9vdoGecazw1Ta6wVPxAlskhZkB7K9IX0FPb0k"
