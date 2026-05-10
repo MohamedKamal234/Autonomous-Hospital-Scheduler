@@ -5,7 +5,7 @@ Hospital AI Triage & Disease Classifier
 - 377 Symptom analysis
 - Direct integration for FlexSim simulation data
 """
-
+import os
 import streamlit as st
 import joblib
 import numpy as np
@@ -22,16 +22,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 def update_local_excel():
-    while True:
-        # سحب البيانات من السحاب
-        response = supabase.table("triage_results").select("*").execute()
+    try:
+        # سحب الداتا من Supabase
+        response = supabase.table("triage_results").select("patient_name, age, predicted_disease, priority_level").execute()
         df = pd.DataFrame(response.data)
         
-        # حفظ الملف في مكان ثابت للفليكس سيم
-        df.to_excel("C:/triage_data.xlsx", index=False)
-        print("تم تحديث الملف المحلي...")
-        time.sleep(1)
-
+        # حفظ الملف في فولدر "Downloads" أو مكان سهل الوصول إليه
+        path = os.path.join(os.path.expanduser("~"), "Downloads", "triage_data.xlsx")
+        df.to_excel(path, index=False)
+        print(f"Success! Saved to: {path}")
+        return path
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
 # --- 2. إعدادات السحاب (Supabase Connection) ---
 SUPABASE_URL = SUPABASE_URL = "https://kxoasybtxsznrlisxrud.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4b2FzeWJ0eHN6bnJsaXN4cnVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNTI5NjksImV4cCI6MjA5MzkyODk2OX0._f1FFz9vdoGecazw1Ta6wVPxAlskhZkB7K9IX0FPb0k"
