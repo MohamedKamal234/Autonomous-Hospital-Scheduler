@@ -2,38 +2,37 @@ import streamlit as st
 import pandas as pd
 import joblib
 import numpy as np
+import os
 from supabase import create_client, Client
 
-# --- 1. Page Configuration ---
+# --- 1. إعدادات الصفحة ---
 st.set_page_config(
     page_title="AI Hospital Scheduler",
     page_icon="🏥",
     layout="wide"
 )
 
-# --- 2. Supabase Connection (Updated with your new credentials) ---
-# تم تصحيح الرابط بناءً على الـ Token الجديد
-SUPABASE_URL = "https://kxoasybtxsznrlisxrud.supabase.co" 
+# --- 2. المسارات والبيانات (عدل المسار هنا لمسار جهازك) ---
+LOCAL_EXCEL_PATH = r"C:\Users\DeLL\Downloads\Graduation project\patient_data.xlsx"
+
+SUPABASE_URL = "https://kxoasybtxsznrlisxrud.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4b2FzeWJ0eHN6bnJsaXN4cnVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNTI5NjksImV4cCI6MjA5MzkyODk2OX0._f1FFz9vdoGecazw1Ta6wVPxAlskhZkB7K9IX0FPb0k"
 
+# --- 3. تهيئة الاتصال والموديل ---
 @st.cache_resource
 def init_connection():
     try:
-        # استخدام .strip() لإزالة أي مسافات مخفية قد تسبب خطأ في الاتصال
         return create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
-    except Exception as e:
-        st.error(f"Cloud Connection Failed: {e}")
-        return None
+    except: return None
 
 supabase = init_connection()
 
-# --- 3. AI Assets Loading ---
 @st.cache_resource
 def load_assets():
     try:
         model = joblib.load('disease_classifier_model.pkl')
         le = joblib.load('label_encoder.pkl')
-        # قائمة الـ 377 عرض بالترتيب الصحيح للموديل
+        # قائمة الـ 377 عرض (تم اختصارها هنا للعرض، تأكد من وجودها كاملة في ملفك)
         feature_names = [
             'anxiety and nervousness', 'depression', 'shortness of breath', 'depressive or psychotic symptoms',
             'sharp chest pain', 'dizziness', 'insomnia', 'abnormal involuntary movements', 'chest tightness',
@@ -121,85 +120,87 @@ def load_assets():
             'hip weakness', 'back swelling', 'ankle stiffness or tightness', 'ankle weakness', 'neck weakness'
         ]
         return model, le, feature_names
-    except Exception as e:
-        st.error(f"Error loading AI assets: {e}")
-        return None, None, None
+    except: return None, None, None
 
 model, le, feature_names = load_assets()
 
-# --- 4. Cloud Logic ---
-def save_patient_data(name, age, disease, priority):
-    if not supabase: return False
-    try:
-        payload = {
-            "patient_name": str(name),
-            "age": int(age),
-            "predicted_disease": str(disease),
-            "priority_level": int(priority)
-        }
-        supabase.table("triage_results").insert(payload).execute()
-        return True
-    except Exception as e:
-        st.error(f"Database Error: {e}")
-        return False
-
-# --- 5. User Interface ---
-st.title("🏥 AI Hospital Admission & Triage System")
-st.markdown("---")
-
-tab_admit, tab_view = st.tabs(["Patient Admission", "Triage Records"])
-
-with tab_admit:
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("📝 Registration")
-        name = st.text_input("Patient Full Name")
-        age = st.number_input("Patient Age", 0, 120, 25)
-    with c2:
-        st.subheader("🔍 Symptoms")
-        symptoms = st.multiselect("Select symptoms:", options=feature_names if feature_names else [])
-
-    if st.button("Analyze & Save", use_container_width=True):
-        if name and symptoms and model:
-            # 1. Vectorization
-            vec = np.zeros(len(feature_names))
-            for s in symptoms:
-                if s in feature_names: vec[feature_names.index(s)] = 1
-            
-            # 2. AI Prediction
-            pred_idx = model.predict(vec.reshape(1, -1))[0]
-            disease = le.inverse_transform([pred_idx])[0]
-            
-            # 3. Priority Logic
-            critical = ['sharp chest pain', 'shortness of breath', 'seizures', 'fainting']
-            if any(s in symptoms for s in critical):
-                prio, label = 1, "Level 1: Critical"
-            elif len(symptoms) > 5:
-                prio, label = 2, "Level 2: Urgent"
-            else:
-                prio, label = 3, "Level 3: Standard"
-            
-            # 4. Save to Supabase
-            if save_patient_data(name, age, disease, prio):
-                st.success(f"Successfully processed: {name}")
-                res_c1, res_c2 = st.columns(2)
-                res_c1.metric("Disease Prediction", disease)
-                res_c2.metric("Priority Level", f"P{prio}")
-                st.info(f"Clinical Guidance: {label}")
-        else:
-            st.warning("Please ensure name and symptoms are provided.")
-
-with tab_view:
-    st.subheader("📊 Live Triage Dashboard")
-    if st.button("🔄 Refresh"): st.rerun()
+# --- 4. دوال الحفظ ---
+def save_dual_mode(name, age, disease, priority):
+    record = {
+        "patient_name": name,
+        "age": int(age),
+        "predicted_disease": disease,
+        "priority_level": int(priority)
+    }
     
+    # 1. الحفظ في السحاب
+    cloud_success = False
     if supabase:
         try:
-            query = supabase.table("triage_results").select("*").order("id", desc=True).execute()
-            data_df = pd.DataFrame(query.data)
-            if not data_df.empty:
-                st.dataframe(data_df, use_container_width=True)
-            else:
-                st.info("No data in cloud yet.")
-        except Exception as e:
-            st.error(f"Failed to fetch data: {e}")
+            supabase.table("triage_results").insert(record).execute()
+            cloud_success = True
+        except: pass
+
+    # 2. الحفظ في الإكسل اللوكال
+    local_success = False
+    try:
+        if os.path.exists(LOCAL_EXCEL_PATH):
+            df = pd.read_excel(LOCAL_EXCEL_PATH)
+            df = pd.concat([df, pd.DataFrame([record])], ignore_index=True)
+        else:
+            df = pd.DataFrame([record])
+        df.to_excel(LOCAL_EXCEL_PATH, index=False)
+        local_success = True
+    except: pass
+
+    return cloud_success, local_success
+
+# --- 5. واجهة المستخدم ---
+st.title("🏥 Smart Hospital Triage & Sync")
+st.markdown(f"**Local Excel Path:** `{LOCAL_EXCEL_PATH}`")
+
+tab1, tab2 = st.tabs(["Patient Entry", "Live Dashboard"])
+
+with tab1:
+    col1, col2 = st.columns(2)
+    with col1:
+        p_name = st.text_input("Patient Name")
+        p_age = st.number_input("Age", 0, 120, 25)
+    with col2:
+        selected = st.multiselect("Symptoms", options=feature_names if feature_names else [])
+
+    if st.button("Analyze & Save Everywhere", use_container_width=True):
+        if p_name and selected and model:
+            # Vectorization
+            vec = np.zeros(len(feature_names))
+            for s in selected:
+                if s in feature_names: vec[feature_names.index(s)] = 1
+            
+            # Prediction
+            res = model.predict(vec.reshape(1, -1))[0]
+            disease = le.inverse_transform([res])[0]
+            
+            # Priority
+            critical = ['sharp chest pain', 'shortness of breath', 'seizures', 'fainting']
+            prio = 1 if any(s in selected for s in critical) else (2 if len(selected) > 5 else 3)
+            
+            # Saving
+            c_ok, l_ok = save_dual_mode(p_name, p_age, disease, prio)
+            
+            if l_ok: st.success("✅ تم تحديث ملف الإكسل بنجاح")
+            if c_ok: st.info("☁️ تم الرفع للسحاب")
+            
+            st.divider()
+            r1, r2 = st.columns(2)
+            r1.metric("Predicted Condition", disease)
+            r2.metric("Triage Priority", f"P{prio}")
+        else:
+            st.error("Missing Data or Model Assets!")
+
+with tab2:
+    if st.button("🔄 Refresh View"): st.rerun()
+    if supabase:
+        try:
+            data = supabase.table("triage_results").select("*").order("id", desc=True).execute()
+            st.dataframe(pd.DataFrame(data.data), use_container_width=True)
+        except: st.warning("Cloud data temporarily unavailable.")
