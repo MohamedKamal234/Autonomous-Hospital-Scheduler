@@ -4,33 +4,36 @@ import joblib
 import numpy as np
 from supabase import create_client, Client
 
-# 1. Page Configuration
+# --- 1. Page Configuration ---
 st.set_page_config(
     page_title="AI Hospital Scheduler",
     page_icon="🏥",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# 2. Supabase Connection
-SUPABASE_URL = "https://kxoasyhtxsznelisxrud.supabase.co"
-SUPABASE_KEY = "eyJhYmcioijiuZiiNiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsImF1ZCI6InN1cGFiYXNlIiwic3ViIjoiZjZkMzkzNzU4NmI3ZzU4ZTNmZWRjOWI2YmJiNzI2ZDIzNzkzMTJiZit6Imt4OasN4cnViiwim9sZSI6InN1cGFiYXNlX2Fub24iLCJpYXQiOjE3Njk1NzkzOjE3NzkzNjIzNzg2ZzNTInV4cCI6MTU5MzAyODkzNX0._f1rrz9vdoGecazw1Ta6wVPxA1s"
+# --- 2. Supabase Connection (Updated with your new credentials) ---
+# تم تصحيح الرابط بناءً على الـ Token الجديد
+SUPABASE_URL = "https://kxoasybtxsznrlisxrud.supabase.co" 
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4b2FzeWJ0eHN6bnJsaXN4cnVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNTI5NjksImV4cCI6MjA5MzkyODk2OX0._f1FFz9vdoGecazw1Ta6wVPxAlskhZkB7K9IX0FPb0k"
 
-try:
-    if 'supabase' not in st.session_state:
-        st.session_state.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    supabase = st.session_state.supabase
-except Exception as e:
-    st.error(f"Failed to connect to Supabase: {e}")
+@st.cache_resource
+def init_connection():
+    try:
+        # استخدام .strip() لإزالة أي مسافات مخفية قد تسبب خطأ في الاتصال
+        return create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
+    except Exception as e:
+        st.error(f"Cloud Connection Failed: {e}")
+        return None
 
-# 3. Load AI Assets
+supabase = init_connection()
+
+# --- 3. AI Assets Loading ---
 @st.cache_resource
 def load_assets():
     try:
         model = joblib.load('disease_classifier_model.pkl')
         le = joblib.load('label_encoder.pkl')
-        
-        # القائمة الكاملة للأعراض (بناءً على الصور المرفقة)
+        # قائمة الـ 377 عرض بالترتيب الصحيح للموديل
         feature_names = [
             'anxiety and nervousness', 'depression', 'shortness of breath', 'depressive or psychotic symptoms',
             'sharp chest pain', 'dizziness', 'insomnia', 'abnormal involuntary movements', 'chest tightness',
@@ -119,130 +122,84 @@ def load_assets():
         ]
         return model, le, feature_names
     except Exception as e:
-        st.error(f"⚠️ Error loading assets: {e}")
+        st.error(f"Error loading AI assets: {e}")
         return None, None, None
 
-# Load global assets
 model, le, feature_names = load_assets()
 
-# 4. Cloud Functions
-def save_prediction(p_name, p_age, disease, priority):
+# --- 4. Cloud Logic ---
+def save_patient_data(name, age, disease, priority):
+    if not supabase: return False
     try:
-        data = {
-            "patient_name": p_name,
-            "age": int(p_age),
-            "predicted_disease": disease,
+        payload = {
+            "patient_name": str(name),
+            "age": int(age),
+            "predicted_disease": str(disease),
             "priority_level": int(priority)
         }
-        supabase.table("triage_results").insert(data).execute()
+        supabase.table("triage_results").insert(payload).execute()
         return True
     except Exception as e:
-        st.error(f"☁️ Cloud Error: {e}")
+        st.error(f"Database Error: {e}")
         return False
 
-def display_data():
-    try:
-        response = supabase.table("triage_results").select(
-            "patient_name, age, predicted_disease, priority_level"
-        ).execute()
-        df = pd.DataFrame(response.data)
-        
-        if not df.empty:
-            st.subheader("📋 Patient Triage Records")
-            st.dataframe(df, use_container_width=True)
-            
-            st.divider()
-            col1, col2 = st.columns(2)
-            col1.metric("Total Patients", len(df))
-            
-            high_count = 0
-            if 'priority_level' in df.columns:
-                high_count = len(df[df['priority_level'].astype(int) == 1])
-            col2.metric("High Priority Cases", high_count)
-        else:
-            st.info("ℹ️ No data found in the database.")
-    except Exception as e:
-        st.error(f"❌ Error fetching data: {e}")
-
-# 5. Main Application Logic
+# --- 5. User Interface ---
 st.title("🏥 AI Hospital Admission & Triage System")
 st.markdown("---")
 
-menu = st.sidebar.selectbox("Navigate", ["Patient Admission", "Triage Analytics"])
+tab_admit, tab_view = st.tabs(["Patient Admission", "Triage Records"])
 
-if menu == "Patient Admission":
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("📝 Patient Registration")
-        p_name = st.text_input("Full Name")
-        p_age = st.number_input("Age", min_value=0, max_value=120, value=25)
-        
-    with col2:
-        st.subheader("🔍 Symptom Selection")
-        selected_symptoms = st.multiselect(
-            "Select symptoms presented by the patient:",
-            options=feature_names if feature_names else []
-        )
-        
-    if st.button("Analyze & Assign Priority"):
-        if p_name and selected_symptoms and model:
-            # Prepare Input Vector
-            input_vector = np.zeros(len(feature_names))
-            for s in selected_symptoms:
-                if s in feature_names:
-                    idx = feature_names.index(s)
-                    input_vector[idx] = 1
+with tab_admit:
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("📝 Registration")
+        name = st.text_input("Patient Full Name")
+        age = st.number_input("Patient Age", 0, 120, 25)
+    with c2:
+        st.subheader("🔍 Symptoms")
+        symptoms = st.multiselect("Select symptoms:", options=feature_names if feature_names else [])
+
+    if st.button("Analyze & Save", use_container_width=True):
+        if name and symptoms and model:
+            # 1. Vectorization
+            vec = np.zeros(len(feature_names))
+            for s in symptoms:
+                if s in feature_names: vec[feature_names.index(s)] = 1
             
-            # Prediction
-            prediction_idx = model.predict(input_vector.reshape(1, -1))[0]
-            disease = le.inverse_transform([prediction_idx])[0]
+            # 2. AI Prediction
+            pred_idx = model.predict(vec.reshape(1, -1))[0]
+            disease = le.inverse_transform([pred_idx])[0]
             
-            # Priority Logic
-            critical_symptoms = ['sharp chest pain', 'shortness of breath', 'seizures', 'fainting']
-            if any(s in selected_symptoms for s in critical_symptoms):
-                priority = 1
-                label = "Level 1: Critical (Immediate Action)"
-                color = "red"
-            elif len(selected_symptoms) > 5:
-                priority = 2
-                label = "Level 2: Urgent"
-                color = "orange"
+            # 3. Priority Logic
+            critical = ['sharp chest pain', 'shortness of breath', 'seizures', 'fainting']
+            if any(s in symptoms for s in critical):
+                prio, label = 1, "Level 1: Critical"
+            elif len(symptoms) > 5:
+                prio, label = 2, "Level 2: Urgent"
             else:
-                priority = 3
-                label = "Level 3: Standard"
-                color = "green"
+                prio, label = 3, "Level 3: Standard"
             
-            # Save to Cloud
-            if save_prediction(p_name, p_age, disease, priority):
-                st.success(f"✅ Analysis Complete for {p_name}")
-                
-                res1, res2 = st.columns(2)
-                res1.metric("Predicted Condition", disease)
-                res2.metric("Assigned Priority", f"P{priority}")
-                st.info(f"Guidance: {label}")
+            # 4. Save to Supabase
+            if save_patient_data(name, age, disease, prio):
+                st.success(f"Successfully processed: {name}")
+                res_c1, res_c2 = st.columns(2)
+                res_c1.metric("Disease Prediction", disease)
+                res_c2.metric("Priority Level", f"P{prio}")
+                st.info(f"Clinical Guidance: {label}")
         else:
-            st.warning("Please enter patient name and select at least one symptom.")
+            st.warning("Please ensure name and symptoms are provided.")
 
-elif menu == "Triage Analytics":
+with tab_view:
     st.subheader("📊 Live Triage Dashboard")
+    if st.button("🔄 Refresh"): st.rerun()
     
-    # Refresh button
-    if st.button("🔄 Refresh Data"):
-        st.rerun()
-        
-    display_data()
-    
-    # Advanced Charting
-    try:
-        import plotly.graph_objects as go
-        response = supabase.table("triage_results").select("*").order("id", desc=True).execute()
-        df_chart = pd.DataFrame(response.data)
-        
-        if not df_chart.empty:
-            p_counts = df_chart['priority_level'].value_counts()
-            fig = go.Figure(data=[go.Pie(labels=p_counts.index, values=p_counts.values, hole=.3)])
-            fig.update_layout(title_text="Patient Priority Distribution", template="plotly_dark")
-            st.plotly_chart(fig)
-    except Exception as e:
-        pass # Plotly is optional or handled silently
+    if supabase:
+        try:
+            query = supabase.table("triage_results").select("*").order("id", desc=True).execute()
+            data_df = pd.DataFrame(query.data)
+            if not data_df.empty:
+                st.dataframe(data_df, use_container_width=True)
+            else:
+                st.info("No data in cloud yet.")
+        except Exception as e:
+            st.error(f"Failed to fetch data: {e}")
