@@ -28,8 +28,12 @@ def update_local_excel():
         df = pd.DataFrame(response.data)
         
         # حفظ الملف في فولدر "Downloads" أو مكان سهل الوصول إليه
-        path = os.path.join(os.path.expanduser("~"), "Downloads", "triage_data.xlsx")
+        # هيتحفظ في نفس المكان اللي فيه الـ app.py
+        path = "triage_data.xlsx" 
         df.to_excel(path, engine='openpyxl', index=False)
+        print("-----------------------------------------")
+        print(f"DONE! FILE IS HERE: {os.getcwd()}")
+        print("-----------------------------------------")
         print(f"Success! Saved to: {path}")
         print(f"Success! Saved to: {path}")
         return path
