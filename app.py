@@ -187,8 +187,8 @@ with tab1:
             # Saving
             c_ok, l_ok = save_dual_mode(p_name, p_age, disease, prio)
             
-            if l_ok: st.success("✅ تم تحديث ملف الإكسل بنجاح")
-            if c_ok: st.info("☁️ تم الرفع للسحاب")
+            if l_ok: st.success("Update file done")
+            if c_ok: st.info("Done")
             
             st.divider()
             r1, r2 = st.columns(2)
